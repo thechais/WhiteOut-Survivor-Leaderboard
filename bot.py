@@ -8,6 +8,43 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from google.cloud import vision
 from google.oauth2 import service_account
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+# ==========================================
+# DUMMY HTTP SERVER FOR RENDER HEALTH CHECKS
+# ==========================================
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"OK - Discord bot is alive")
+
+    # Mute console request logs to keep terminal output clean
+    def log_message(self, format, *args):
+        return
+
+def run_web_server():
+    # Render assigns an HTTP port dynamically via the PORT environment variable
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    print(f"🌐 Background HTTP server listening on 0.0.0.0:{port}")
+    server.serve_forever()
+
+# Launch the HTTP server in a daemon background thread
+threading.Thread(target=run_web_server, daemon=True).start()
+
+# ==========================================
+# YOUR DISCORD BOT LOGIC FOLLOWS
+# ==========================================
+intents = discord.Intents.default()
+intents.message_content = True
+bot = discord.Client(intents=intents)
+
+@bot.event
+async def on_ready():
+    print(f"✅ Bot is online as {bot.user}")
 
 # ==========================================
 # CONFIGURATION
