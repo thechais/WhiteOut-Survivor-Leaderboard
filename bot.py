@@ -34,7 +34,7 @@ async def on_ready():
     print(f"Bot logged in as {bot.user.name}")
 
 # Set your target channel name (or target channel ID for higher security)
-TARGET_CHANNEL_NAME = "small-events-monitoring"
+TARGET_CHANNEL_ID = "1535518390276460575"
 
 @bot.event
 async def on_message(message):
