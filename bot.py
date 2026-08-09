@@ -12,7 +12,7 @@ from google.oauth2 import service_account
 # ==========================================
 # CONFIGURATION
 # ==========================================
-TARGET_CHANNEL_ID = 123456789012345678  # Replace with your actual Channel ID
+TARGET_CHANNEL_ID = 1535518390276460575  # Replace with your actual Channel ID
 SHEET_NAME = "WOS_State_3817_Leaderboards"
 
 # Initialize Discord Intents
