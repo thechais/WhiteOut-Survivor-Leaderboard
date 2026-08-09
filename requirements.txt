@@ -5,4 +5,4 @@ oauth2client
 Pillow
 streamlit
 pandas
-plitly
+plotly
