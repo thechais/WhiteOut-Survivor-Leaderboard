@@ -1,6 +1,5 @@
 discord.py
-easyocr
+google-cloud-vision
 gspread
 oauth2client
 Pillow
-requests
