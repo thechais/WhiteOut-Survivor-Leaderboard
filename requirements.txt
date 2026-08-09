@@ -3,3 +3,6 @@ google-cloud-vision
 gspread
 oauth2client
 Pillow
+streamlit
+pandas
+plitly
