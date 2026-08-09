@@ -3,6 +3,8 @@ google-cloud-vision
 gspread
 oauth2client
 Pillow
+google-auth
+google-api-python-client
 streamlit
 pandas
 plotly
