@@ -1,0 +1,6 @@
+discord.py
+easyocr
+gspread
+oauth2client
+Pillow
+requests
