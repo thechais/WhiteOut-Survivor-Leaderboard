@@ -3,6 +3,7 @@ import io
 import re
 import json
 import threading
+from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import discord
 from discord.ext import commands
@@ -12,7 +13,7 @@ from google.cloud import vision
 from google.oauth2 import service_account
 
 # ==========================================
-# DUMMY HTTP SERVER FOR RENDER KEEP-ALIVE
+# 1. DUMMY HTTP SERVER FOR RENDER KEEP-ALIVE
 # ==========================================
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -33,16 +34,16 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # ==========================================
-# CONFIGURATION
+# 2. BOT CONFIGURATION & CREDENTIALS
 # ==========================================
-TARGET_CHANNEL_ID = 1535518390276460575  # <--- REPLACE WITH YOUR DISCORD CHANNEL ID
+TARGET_CHANNEL_ID = 123456789012345678  # <--- REPLACE WITH YOUR DISCORD CHANNEL ID
 SHEET_NAME = "WOS_State_3817_Leaderboards"
 
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Load GCP Credentials
+# Load GCP JSON Credentials from Render Environment Variable
 creds_json = json.loads(os.environ.get("GCP_SERVICE_ACCOUNT"))
 
 # Google Sheets Auth
@@ -55,7 +56,7 @@ sheet = client.open(SHEET_NAME).sheet1
 vision_creds = service_account.Credentials.from_service_account_info(creds_json)
 vision_client = vision.ImageAnnotatorClient(credentials=vision_creds)
 
-# Ensure headers exist
+# Ensure sheet headers exist
 headers = ["Event_Name", "Rank", "Player_Name", "Score", "Submission_Date"]
 if not sheet.get_all_values():
     sheet.append_row(headers)
@@ -64,12 +65,34 @@ if not sheet.get_all_values():
 async def on_ready():
     print(f"✅ Bot logged in as {bot.user.name}")
 
+# ==========================================
+# 3. MESSAGE LISTENER & OCR PROCESSING
+# ==========================================
 @bot.event
 async def on_message(message):
+    # Ignore bot's own messages or messages outside target channel
     if message.author == bot.user or message.channel.id != TARGET_CHANNEL_ID:
         return
 
-    # 1. Collect all attached image screenshots
+    # ------------------------------------------
+    # TIME WINDOW CHECK (00:00 - 03:00 UTC)
+    # ------------------------------------------
+    now_utc = message.created_at.astimezone(timezone.utc)
+    is_admin = message.author.guild_permissions.administrator
+
+    # If non-admin posts outside 00:00 - 02:59 UTC, delete and warn
+    if not is_admin and not (0 <= now_utc.hour < 3):
+        await message.delete()
+        await message.channel.send(
+            f"⛔ {message.author.mention}, screenshot submissions are closed!\n"
+            f"Submissions are only allowed within **3 hours after event reset (00:00 UTC to 03:00 UTC)**.",
+            delete_after=10
+        )
+        return
+
+    # ------------------------------------------
+    # ATTACHMENT & TEXT VALIDATION
+    # ------------------------------------------
     image_attachments = [
         att for att in message.attachments
         if att.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))
@@ -92,13 +115,15 @@ async def on_message(message):
         return
 
     event_name = message.content.strip().upper()
-    submission_date = str(message.created_at.date())
+    submission_date = str(now_utc.date())
     
     await message.add_reaction("⏳")
 
     all_extracted_ranks = {}
 
-    # 2. Iterate through ALL uploaded images in the single Discord message
+    # ------------------------------------------
+    # OCR PARSING FOR MULTIPLE IMAGES
+    # ------------------------------------------
     for attachment in image_attachments:
         image_bytes = await attachment.read()
         image = vision.Image(content=image_bytes)
@@ -111,19 +136,21 @@ async def on_message(message):
         raw_text = texts[0].description
         ocr_lines = [line.strip() for line in raw_text.split('\n') if line.strip()]
 
-        # Parse OCR lines for Rank, Player Name, and Score
+        # Parse OCR text lines for Rank, Player Name, and Score
         for i in range(len(ocr_lines) - 2):
             text = ocr_lines[i]
-            # Match Rank digits 1 to 20
+            # Match Rank digits 1 to 20 (e.g. "1", "#1", "20")
             if re.match(r"^#?([1-9]|1[0-9]|20)$", text):
                 rank = int(re.sub(r"\D", "", text))
                 player_name = ocr_lines[i+1]
                 score = ocr_lines[i+2]
                 
-                # Dictionary key deduplicates overlapping ranks from multiple screenshots
+                # Dictionary prevents duplicate ranks across multiple screenshots
                 all_extracted_ranks[rank] = [event_name, rank, player_name, score, submission_date]
 
-    # 3. Batch insert / update into Google Sheet
+    # ------------------------------------------
+    # BATCH WRITE TO GOOGLE SHEETS
+    # ------------------------------------------
     if all_extracted_ranks:
         sorted_ranks = sorted(all_extracted_ranks.keys())
         rows_to_insert = [all_extracted_ranks[r] for r in sorted_ranks]
@@ -132,6 +159,7 @@ async def on_message(message):
 
         for row in rows_to_insert:
             duplicate_row_num = None
+            # Check if this Event + Rank + Submission Date already exists
             for idx, record in enumerate(existing_records, start=2):
                 if (str(record['Event_Name']) == row[0] and 
                     str(record['Rank']) == str(row[1]) and 
@@ -152,8 +180,9 @@ async def on_message(message):
     else:
         await message.clear_reactions()
         await message.add_reaction("❌")
-        await message.reply("❌ Unable to parse Top 20 ranks from the screenshots. Ensure images are clear and uncropped.", delete_after=10)
+        await message.reply("❌ Unable to parse Top 20 ranks from screenshots. Ensure images are clear and uncropped.", delete_after=10)
 
     await bot.process_commands(message)
 
+# Run Bot using token from environment variables
 bot.run(os.environ.get("DISCORD_TOKEN"))
