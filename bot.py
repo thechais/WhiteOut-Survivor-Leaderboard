@@ -36,7 +36,7 @@ threading.Thread(target=run_web_server, daemon=True).start()
 # ==========================================
 # 2. BOT CONFIGURATION & CREDENTIALS
 # ==========================================
-TARGET_CHANNEL_ID = 123456789012345678  # <--- REPLACE WITH YOUR DISCORD CHANNEL ID
+TARGET_CHANNEL_ID = 1535518390276460575  # <--- REPLACE WITH YOUR DISCORD CHANNEL ID
 SHEET_NAME = "WOS_State_3817_Leaderboards"
 
 intents = discord.Intents.default()
@@ -70,7 +70,7 @@ async def on_ready():
 # ==========================================
 @bot.event
 async def on_message(message):
-    # Ignore bot's own messages or messages outside target channel
+    # Ignore bot's own messages or messages outside the target channel
     if message.author == bot.user or message.channel.id != TARGET_CHANNEL_ID:
         return
 
@@ -139,7 +139,7 @@ async def on_message(message):
         # Parse OCR text lines for Rank, Player Name, and Score
         for i in range(len(ocr_lines) - 2):
             text = ocr_lines[i]
-            # Match Rank digits 1 to 20 (e.g. "1", "#1", "20")
+            # Match Rank digits 1 to 20 (e.g., "1", "#1", "20")
             if re.match(r"^#?([1-9]|1[0-9]|20)$", text):
                 rank = int(re.sub(r"\D", "", text))
                 player_name = ocr_lines[i+1]
@@ -149,33 +149,43 @@ async def on_message(message):
                 all_extracted_ranks[rank] = [event_name, rank, player_name, score, submission_date]
 
     # ------------------------------------------
-    # BATCH WRITE TO GOOGLE SHEETS
+    # BATCH WRITE TO GOOGLE SHEETS (CLEAR TODAY'S RUN ONLY)
     # ------------------------------------------
     if all_extracted_ranks:
         sorted_ranks = sorted(all_extracted_ranks.keys())
         rows_to_insert = [all_extracted_ranks[r] for r in sorted_ranks]
 
-        existing_records = sheet.get_all_records()
+        # Get all existing rows
+        all_rows = sheet.get_all_values()
+        cleaned_rows = []
 
-        for row in rows_to_insert:
-            duplicate_row_num = None
-            # Check if this Event + Rank + Submission Date already exists
-            for idx, record in enumerate(existing_records, start=2):
-                if (str(record['Event_Name']) == row[0] and 
-                    str(record['Rank']) == str(row[1]) and 
-                    str(record['Submission_Date']) == row[4]):
-                    duplicate_row_num = idx
-                    break
+        # Retain header row and historical records from other dates or events
+        for idx, row in enumerate(all_rows):
+            if idx == 0:
+                cleaned_rows.append(row)
+                continue
+            
+            row_event = row[0].strip().upper() if len(row) > 0 else ""
+            row_date = row[4].strip() if len(row) > 4 else ""
+            
+            # Remove ONLY records matching this exact event and today's date
+            if row_event == event_name and row_date == submission_date:
+                continue
+            
+            cleaned_rows.append(row)
 
-            if duplicate_row_num:
-                sheet.update(f"A{duplicate_row_num}:E{duplicate_row_num}", [row])
-            else:
-                sheet.append_row(row)
+        # Append latest extracted rows
+        cleaned_rows.extend(rows_to_insert)
+
+        # Overwrite sheet with updated dataset
+        sheet.clear()
+        sheet.update("A1", cleaned_rows)
 
         await message.clear_reactions()
         await message.add_reaction("✅")
         await message.reply(
-            f"✅ Processed **{len(image_attachments)} screenshot(s)**. Logged **{len(rows_to_insert)} rank entries** (Ranks {min(sorted_ranks)}–{max(sorted_ranks)}) for **{event_name}**."
+            f"✅ Processed **{len(image_attachments)} screenshot(s)**. "
+            f"Updated **{event_name}** ({submission_date}) with **{len(rows_to_insert)} rank entries** (Ranks {min(sorted_ranks)}–{max(sorted_ranks)})."
         )
     else:
         await message.clear_reactions()
