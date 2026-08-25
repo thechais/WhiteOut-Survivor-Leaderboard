@@ -2,6 +2,8 @@ import os
 import io
 import re
 import json
+import time
+import sys
 import threading
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -36,7 +38,7 @@ threading.Thread(target=run_web_server, daemon=True).start()
 # ==========================================
 # 2. BOT CONFIGURATION & CREDENTIALS
 # ==========================================
-TARGET_CHANNEL_ID = 1535518390276460575  # <--- REPLACE WITH YOUR DISCORD CHANNEL ID
+TARGET_CHANNEL_ID = 123456789012345678  # <--- REPLACE WITH YOUR DISCORD CHANNEL ID
 SHEET_NAME = "WOS_State_3817_Leaderboards"
 
 intents = discord.Intents.default()
@@ -44,7 +46,12 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Load GCP JSON Credentials from Render Environment Variable
-creds_json = json.loads(os.environ.get("GCP_SERVICE_ACCOUNT"))
+creds_raw = os.environ.get("GCP_SERVICE_ACCOUNT")
+if not creds_raw:
+    print("❌ FATAL: GCP_SERVICE_ACCOUNT environment variable is missing!")
+    sys.exit(1)
+
+creds_json = json.loads(creds_raw)
 
 # Google Sheets Auth
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -63,14 +70,14 @@ if not sheet.get_all_values():
 
 @bot.event
 async def on_ready():
-    print(f"✅ Bot logged in as {bot.user.name}")
+    print(f"✅ Bot logged in successfully as {bot.user.name}")
 
 # ==========================================
 # 3. MESSAGE LISTENER & OCR PROCESSING
 # ==========================================
 @bot.event
 async def on_message(message):
-    # Ignore bot's own messages or messages outside the target channel
+    # Ignore bot's own messages or messages outside target channel
     if message.author == bot.user or message.channel.id != TARGET_CHANNEL_ID:
         return
 
@@ -194,5 +201,25 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-# Run Bot using token from environment variables
-bot.run(os.environ.get("DISCORD_TOKEN"))
+# ==========================================
+# 4. BOT RUNNER WITH RATE-LIMIT SAFEGUARD
+# ==========================================
+token = os.environ.get("DISCORD_TOKEN")
+if not token:
+    print("❌ FATAL: DISCORD_TOKEN environment variable is missing!")
+    sys.exit(1)
+
+while True:
+    try:
+        print("🚀 Starting Discord Bot...")
+        bot.run(token)
+    except discord.errors.HTTPException as e:
+        if e.status == 429:
+            print("⚠️ Rate limited by Discord API! Waiting 60 seconds before retrying...")
+            time.sleep(60)
+        else:
+            print(f"❌ Discord HTTP Exception: {e}")
+            time.sleep(10)
+    except Exception as e:
+        print(f"❌ Unexpected Error: {e}")
+        time.sleep(10)
