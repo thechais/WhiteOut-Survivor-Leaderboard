@@ -37,21 +37,30 @@ else:
     view = st.sidebar.radio("Select View", ["🏆 Event Leaderboards", "🔍 Player Tracker", "📊 State Analytics"])
 
     # ------------------------------------------
-    # VIEW 1: EVENT LEADERBOARDS (WITH HISTORICAL DATES)
+        # ------------------------------------------
+    # VIEW 1: EVENT LEADERBOARDS (DEFAULTS TO LATEST)
     # ------------------------------------------
     if view == "🏆 Event Leaderboards":
         st.subheader("Leaderboard Records")
         
+        # 1. Identify the event with the most recent submission date in the entire sheet
+        latest_overall_event = df.sort_values("Submission_Date", ascending=False)["Event_Name"].iloc[0]
+        
         events = sorted(df["Event_Name"].unique().tolist())
-        selected_event = st.selectbox("Select Event", events)
+        default_event_idx = events.index(latest_overall_event) if latest_overall_event in events else 0
+        
+        # Dropdown defaults to the latest active event
+        selected_event = st.selectbox("Select Event", events, index=default_event_idx)
         
         event_df = df[df["Event_Name"] == selected_event]
         
-        # Historical date selector
+        # 2. Get available dates sorted newest-first (index 0 is the latest occurrence)
         available_dates = sorted(event_df["Submission_Date"].dt.date.unique().tolist(), reverse=True)
-        selected_date = st.selectbox("Select Event Date", available_dates)
         
-        # Display specific historical event run
+        # Dropdown defaults to the most recent date (index=0)
+        selected_date = st.selectbox("Select Event Date", available_dates, index=0)
+        
+        # 3. Filter and display rankings for the latest selected run
         final_df = event_df[event_df["Submission_Date"].dt.date == selected_date].sort_values("Rank")
         
         st.dataframe(
