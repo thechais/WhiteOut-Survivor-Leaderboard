@@ -38,7 +38,7 @@ threading.Thread(target=run_web_server, daemon=True).start()
 # ==========================================
 # 2. BOT CONFIGURATION & CREDENTIALS
 # ==========================================
-TARGET_CHANNEL_ID = 123456789012345678  # <--- REPLACE WITH YOUR DISCORD CHANNEL ID
+TARGET_CHANNEL_ID = 1535518390276460575  # <--- REPLACE WITH YOUR DISCORD CHANNEL ID
 SHEET_NAME = "WOS_State_3817_Leaderboards"
 
 intents = discord.Intents.default()
