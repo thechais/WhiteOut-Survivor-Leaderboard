@@ -18,9 +18,9 @@ from google.oauth2 import service_account
 # ==========================================
 # 1. CONFIGURATION & TARGETS
 # ==========================================
-TARGET_CHANNEL_ID = 123456789012345678  # <--- REPLACE WITH YOUR DISCORD CHANNEL ID
+TARGET_CHANNEL_ID = 1535518390276460575  # <--- REPLACE WITH YOUR DISCORD CHANNEL ID
 SHEET_NAME = "WOS_State_3817_Leaderboards"
-STREAMLIT_URL = "https://your-streamlit-app-url.streamlit.app"  # <--- REPLACE WITH YOUR STREAMLIT DASHBOARD URL
+STREAMLIT_URL = "https://whiteout-survivor-leaderboard-tio56zzh5kusmkhxshtwgx.streamlit.app/"  # <--- REPLACE WITH YOUR STREAMLIT DASHBOARD URL
 
 # ==========================================
 # 2. RENDER HTTP SERVER & STREAMLIT PINGER
