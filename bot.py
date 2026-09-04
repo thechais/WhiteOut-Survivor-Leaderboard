@@ -1,29 +1,10 @@
 import os
-import io
-import re
-import json
-import time
 import sys
 import threading
-import urllib.request
-from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import discord
-from discord.ext import commands
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from google.cloud import vision
-from google.oauth2 import service_account
 
 # ==========================================
-# 1. CONFIGURATION & TARGETS
-# ==========================================
-TARGET_CHANNEL_ID = 1535518390276460575  # <--- REPLACE WITH YOUR DISCORD CHANNEL ID
-SHEET_NAME = "WOS_State_3817_Leaderboards"
-STREAMLIT_URL = "https://whiteout-survivor-leaderboard-tio56zzh5kusmkhxshtwgx.streamlit.app/"  # <--- REPLACE WITH YOUR STREAMLIT DASHBOARD URL
-
-# ==========================================
-# 2. RENDER HTTP SERVER & STREAMLIT PINGER
+# 1. IMMEDIATE RENDER PORT BIND (FIXES PORT SCANNER)
 # ==========================================
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -33,14 +14,38 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"OK - Discord bot is alive")
 
     def log_message(self, format, *args):
-        return
+        return  # Silence HTTP server log noise
 
-def run_web_server():
+def start_web_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    print(f"🌐 Background HTTP server listening on port {port}")
+    print(f"🌐 Background HTTP server bound to port {port}")
     server.serve_forever()
 
+# Start HTTP server IMMEDIATELY so Render port check succeeds on boot
+threading.Thread(target=start_web_server, daemon=True).start()
+
+# ==========================================
+# 2. IMPORTS & CONFIGURATION
+# ==========================================
+import io
+import re
+import json
+import time
+import urllib.request
+from datetime import datetime, timezone
+import discord
+from discord.ext import commands
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from google.cloud import vision
+from google.oauth2 import service_account
+
+TARGET_CHANNEL_ID = 1535518390276460575  # <--- REPLACE WITH YOUR DISCORD CHANNEL ID
+SHEET_NAME = "WOS_State_3817_Leaderboards"
+STREAMLIT_URL = "https://your-streamlit-app-url.streamlit.app"  # <--- REPLACE WITH YOUR STREAMLIT DASHBOARD URL
+
+# Keep Streamlit app awake in the background
 def keep_streamlit_alive():
     while True:
         try:
@@ -52,18 +57,15 @@ def keep_streamlit_alive():
         except Exception as e:
             print(f"⚠️ Streamlit keep-alive ping failed: {e}")
 
-threading.Thread(target=run_web_server, daemon=True).start()
 threading.Thread(target=keep_streamlit_alive, daemon=True).start()
 
 # ==========================================
 # 3. NON-BLOCKING API AUTHENTICATION
 # ==========================================
-print("⏳ [1/4] Configuring Discord Intents...")
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-print("⏳ [2/4] Reading GCP Credentials...")
 creds_raw = os.environ.get("GCP_SERVICE_ACCOUNT")
 if not creds_raw:
     print("❌ FATAL: GCP_SERVICE_ACCOUNT environment variable is missing!")
@@ -75,7 +77,6 @@ except Exception as e:
     print(f"❌ FATAL: GCP_SERVICE_ACCOUNT is not valid JSON: {e}")
     sys.exit(1)
 
-print("⏳ [3/4] Connecting to Google Services...")
 try:
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     sheet_creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, scope)
@@ -87,21 +88,21 @@ try:
         sheet.append_row(headers)
     print("✅ Google Sheets connected successfully!")
 except Exception as e:
-    print(f"⚠️ Warning: Google Sheets failed to initialize: {e}")
+    print(f"⚠️ Warning: Google Sheets connection failed: {e}")
 
 try:
     vision_creds = service_account.Credentials.from_service_account_info(creds_json)
     vision_client = vision.ImageAnnotatorClient(credentials=vision_creds)
-    print("✅ Cloud Vision API connected successfully!")
+    print("✅ Cloud Vision API ready!")
 except Exception as e:
-    print(f"⚠️ Warning: Cloud Vision failed to initialize: {e}")
+    print(f"⚠️ Warning: Cloud Vision failed: {e}")
 
 @bot.event
 async def on_ready():
-    print(f"🎉 SUCCESS: Bot is connected and online as {bot.user.name} ({bot.user.id})")
+    print(f"🎉 SUCCESS: Bot is connected and online as {bot.user.name}")
 
 # ==========================================
-# 4. MESSAGE LISTENER & OCR PROCESSING
+# 4. DISCORD EVENT LISTENER & OCR ENGINE
 # ==========================================
 @bot.event
 async def on_message(message):
@@ -111,6 +112,7 @@ async def on_message(message):
     now_utc = message.created_at.astimezone(timezone.utc)
     is_admin = message.author.guild_permissions.administrator
 
+    # 3-Hour Submission Window Check (00:00 to 02:59 UTC)
     if not is_admin and not (0 <= now_utc.hour < 3):
         await message.delete()
         await message.channel.send(
@@ -128,7 +130,7 @@ async def on_message(message):
     if not image_attachments or not message.content.strip():
         await message.delete()
         await message.channel.send(
-            f"⚠️ {message.author.mention}, please upload leaderboard screenshots along with the **Event Name**.",
+            f"⚠️ {message.author.mention}, please upload leaderboard screenshots along with the **Event Name** in text.",
             delete_after=5
         )
         return
@@ -137,7 +139,6 @@ async def on_message(message):
     submission_date = str(now_utc.date())
     
     await message.add_reaction("⏳")
-
     all_extracted_ranks = {}
 
     for attachment in image_attachments:
@@ -170,6 +171,7 @@ async def on_message(message):
         all_rows = sheet.get_all_values()
         cleaned_rows = []
 
+        # Overwrite entries matching today's event, keep historical
         for idx, row in enumerate(all_rows):
             if idx == 0:
                 cleaned_rows.append(row)
@@ -201,28 +203,27 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ==========================================
-# BOT 5. RUNNER WITH RATE-LIMIT SAFEGUARD
+# 5. RUNNER WITH DISCORD 429 BACKOFF
 # ==========================================
 token = os.environ.get("DISCORD_TOKEN")
 if not token:
     print("❌ FATAL: DISCORD_TOKEN environment variable is missing!")
     sys.exit(1)
 
-retry_delay = 60  # Initial sleep duration (seconds)
+retry_delay = 60
 
 while True:
     try:
-        print("🚀 Attempting to connect to Discord Gateway...")
+        print("🚀 Starting Discord Bot...")
         bot.run(token)
     except discord.errors.HTTPException as e:
         if e.status == 429:
-            print(f"⚠️ Rate limited by Discord API (429)! Backing off for {retry_delay} seconds...")
+            print(f"⚠️ Discord 429 Rate Limit! Backing off for {retry_delay} seconds...")
             time.sleep(retry_delay)
-            # Exponentially increase delay up to 10 minutes max to protect the IP
-            retry_delay = min(retry_delay * 2, 600)
+            retry_delay = min(retry_delay * 2, 600)  # Max 10 minutes
         else:
             print(f"❌ Discord HTTP Exception: {e}")
             time.sleep(15)
     except Exception as e:
-        print(f"❌ Unexpected Error during runtime: {e}")
+        print(f"❌ Unexpected Error: {e}")
         time.sleep(15)
