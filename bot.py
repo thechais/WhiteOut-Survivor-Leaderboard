@@ -63,7 +63,7 @@ async def on_ready():
     print(f"🎉 SUCCESS: Bot is connected and online as {bot.user.name}")
 
 # ==========================================
-# 3. OCR & LEADERBOARD LOGIC
+# 3. OCR & LEADERBOARD LOGIC (SYMBOL-OPTIMIZED)
 # ==========================================
 @bot.event
 async def on_message(message):
@@ -106,21 +106,32 @@ async def on_message(message):
         try:
             image_bytes = await attachment.read()
             image = vision.Image(content=image_bytes)
-            response = vision_client.text_detection(image=image)
-            texts = response.text_annotations
 
-            if not texts:
+            # ----------------------------------------------------
+            # CHANGED: Use document_text_detection for symbols
+            # ----------------------------------------------------
+            response = vision_client.document_text_detection(image=image)
+            
+            # Extract full raw text annotation
+            full_annotation = response.full_text_annotation
+            if not full_annotation or not full_annotation.text:
                 continue
 
-            raw_text = texts[0].description
+            raw_text = full_annotation.text
             ocr_lines = [line.strip() for line in raw_text.split('\n') if line.strip()]
 
             for i in range(len(ocr_lines) - 2):
                 text = ocr_lines[i]
-                if re.match(r"^#?([1-9]|1[0-9]|20)$", text):
+                # Match rank numbers 1-20 (allowing optional '#' or trailing dots)
+                if re.match(r"^#?([1-9]|1[0-9]|20)\.?$", text):
                     rank = int(re.sub(r"\D", "", text))
-                    player_name = ocr_lines[i+1]
-                    score = ocr_lines[i+2]
+                    
+                    # Ensure UTF-8 string encoding is explicitly preserved for symbols/emojis
+                    raw_player_name = ocr_lines[i + 1]
+                    player_name = str(raw_player_name).encode('utf-8', errors='ignore').decode('utf-8').strip()
+                    
+                    score = ocr_lines[i + 2].strip()
+                    
                     all_extracted_ranks[rank] = [event_name, rank, player_name, score, submission_date]
         except Exception as e:
             print(f"⚠️ Error processing attachment: {e}")
@@ -140,6 +151,7 @@ async def on_message(message):
             row_event = row[0].strip().upper() if len(row) > 0 else ""
             row_date = row[4].strip() if len(row) > 4 else ""
             
+            # Overwrite duplicate submissions for the same event on the same day
             if row_event == event_name and row_date == submission_date:
                 continue
             
@@ -147,6 +159,8 @@ async def on_message(message):
 
         cleaned_rows.extend(rows_to_insert)
         sheet.clear()
+        
+        # Ensure UTF-8 formatting when updating Google Sheets
         sheet.update("A1", cleaned_rows)
 
         await message.clear_reactions()
@@ -161,6 +175,7 @@ async def on_message(message):
         await message.reply("❌ Unable to parse Top 20 ranks from screenshots.", delete_after=10)
 
     await bot.process_commands(message)
+
 
 # ==========================================
 # 4. RUNNER
