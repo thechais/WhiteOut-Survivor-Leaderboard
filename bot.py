@@ -201,25 +201,28 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ==========================================
-# 5. BOT RUNNER WITH RECONNECT LOOP
+# BOT 5. RUNNER WITH RATE-LIMIT SAFEGUARD
 # ==========================================
 token = os.environ.get("DISCORD_TOKEN")
 if not token:
     print("❌ FATAL: DISCORD_TOKEN environment variable is missing!")
     sys.exit(1)
 
-print("⏳ [4/4] Connecting to Discord Gateway...")
+retry_delay = 60  # Initial sleep duration (seconds)
 
 while True:
     try:
+        print("🚀 Attempting to connect to Discord Gateway...")
         bot.run(token)
     except discord.errors.HTTPException as e:
         if e.status == 429:
-            print("⚠️ Rate limited by Discord API! Waiting 60 seconds...")
-            time.sleep(60)
+            print(f"⚠️ Rate limited by Discord API (429)! Backing off for {retry_delay} seconds...")
+            time.sleep(retry_delay)
+            # Exponentially increase delay up to 10 minutes max to protect the IP
+            retry_delay = min(retry_delay * 2, 600)
         else:
             print(f"❌ Discord HTTP Exception: {e}")
-            time.sleep(10)
+            time.sleep(15)
     except Exception as e:
-        print(f"❌ Unexpected Error: {e}")
-        time.sleep(10)
+        print(f"❌ Unexpected Error during runtime: {e}")
+        time.sleep(15)
