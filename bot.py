@@ -43,7 +43,7 @@ from google.oauth2 import service_account
 
 TARGET_CHANNEL_ID = 1535518390276460575  # <--- REPLACE WITH YOUR DISCORD CHANNEL ID
 SHEET_NAME = "WOS_State_3817_Leaderboards"
-STREAMLIT_URL = "https://your-streamlit-app-url.streamlit.app"  # <--- REPLACE WITH YOUR STREAMLIT DASHBOARD URL
+STREAMLIT_URL = "https://whiteout-survivor-leaderboard-tio56zzh5kusmkhxshtwgx.streamlit.app"  # <--- REPLACE WITH YOUR STREAMLIT DASHBOARD URL
 
 # Keep Streamlit app awake in the background
 def keep_streamlit_alive():
